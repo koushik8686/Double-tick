@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo } from 'react';
+import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
 
 // --- STYLES ---
 // Since we can't link an external CSS file, all styles are included here.
@@ -135,6 +135,8 @@ const ComponentStyles = () => (
         .sort-icon {
             margin-left: 4px;
             font-size: 0.6rem;
+            display: inline-block;
+            width: 1ch;
         }
         
         .scroll-container {
@@ -431,8 +433,8 @@ const Table = ({ customers, onSort, sortConfig, onLoadMore, hasMore, isLoadingMo
                 <thead>
                     <tr>
                         <th style={{ width: '80px' }}>S.No.</th>
-                        <th>Customer Name</th>
-                        <th>Email</th>
+                        <SortableHeader columnKey="name" title="Customer Name" />
+                        <SortableHeader columnKey="email" title="Email" />
                         <SortableHeader columnKey="phone" title="Phone" />
                         <SortableHeader columnKey="score" title="Score" />
                         <SortableHeader columnKey="lastMessageAt" title="Last Message" />
@@ -546,6 +548,33 @@ export default function App() {
     
     const isSearching = debouncedSearchTerm.trim() !== '';
 
+    const sortedData = useMemo(() => {
+        const dataToSort = isSearching ? search.filteredCustomers : customers;
+        if (!sortConfig.key) {
+            return dataToSort;
+        }
+
+        const sorted = [...dataToSort].sort((a, b) => {
+            const valA = a[sortConfig.key];
+            const valB = b[sortConfig.key];
+
+            if (valA === null || valA === undefined) return 1;
+            if (valB === null || valB === undefined) return -1;
+            
+            let comparison = 0;
+            if (sortConfig.key === 'lastMessageAt') {
+                comparison = new Date(valA).getTime() - new Date(valB).getTime();
+            } else if (typeof valA === 'string') {
+                comparison = valA.localeCompare(valB);
+            } else {
+                comparison = valA - valB;
+            }
+
+            return sortConfig.direction === 'asc' ? comparison : -comparison;
+        });
+        return sorted;
+    }, [customers, search.filteredCustomers, sortConfig, isSearching]);
+
     const getStatusMessage = () => {
         if (search.isNewSearchLoading) return `Searching for "${debouncedSearchTerm}"...`;
         if (status.loading) return status.message;
@@ -568,7 +597,7 @@ export default function App() {
                 <main className="content-area">
                     <div className="status-bar">{getStatusMessage()}</div>
                     <Table
-                      customers={isSearching ? search.filteredCustomers : customers}
+                      customers={sortedData}
                       onSort={handleSort}
                       sortConfig={sortConfig}
                       onLoadMore={isSearching ? search.loadNextPage : loadMoreCustomers}
@@ -581,4 +610,3 @@ export default function App() {
         </>
     );
 }
-
