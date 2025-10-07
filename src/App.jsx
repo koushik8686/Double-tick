@@ -40,11 +40,19 @@ const ComponentStyles = () => (
             border-bottom: 1px solid var(--border-color);
             flex-shrink: 0;
         }
+
+        .header-left, .header-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-shrink: 0;
+        }
         
         .header-center {
            flex-grow: 1;
            display: flex;
            justify-content: center;
+           padding: 0 20px;
         }
 
         .search-bar {
@@ -74,6 +82,47 @@ const ComponentStyles = () => (
             outline: none;
             border-color: var(--accent-color);
             box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+        }
+
+        .filter-button {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background-color: var(--secondary-bg);
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .filter-button:hover {
+            background-color: var(--primary-bg);
+        }
+
+        .filter-button svg {
+            color: var(--text-secondary);
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background-color: var(--primary-bg);
+            cursor: pointer;
+            border: 1px solid var(--border-color);
+        }
+
+        .user-profile svg {
+            width: 20px;
+            height: 20px;
+            color: var(--text-secondary);
         }
 
         .content-area {
@@ -459,6 +508,29 @@ const Table = ({ customers, onSort, sortConfig, onLoadMore, hasMore, isLoadingMo
     );
 };
 
+// --- ICONS ---
+const FilterIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M2.66699 4.66667H13.3337" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        <path d="M4.66699 8H11.3337" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        <path d="M6.66699 11.3333H9.33366" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+);
+
+const UserIcon = () => (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 12C14.2091 12 16 10.2091 16 8C16 5.79086 14.2091 4 12 4C9.79086 4 8 5.79086 8 8C8 10.2091 9.79086 12 12 12Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M20 21V19C20 16.7909 18.2091 15 16 15H8C5.79086 15 4 16.7909 4 19V21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+);
+
+const Logo = () => (
+     <svg height="24" viewBox="0 0 120 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M14.02 2.00005L7.02 14.0001L14.02 26.0001H28.02L21.02 14.0001L28.02 2.00005H14.02Z" fill="#3B82F6"/>
+        <text x="35" y="20" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" fontSize="20" fontWeight="600" fill="#111827">DataGrid</text>
+    </svg>
+);
+
 
 // --- MAIN APP COMPONENT ---
 export default function App() {
@@ -470,6 +542,7 @@ export default function App() {
     const [hasMore, setHasMore] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [isInitialLoading, setIsInitialLoading] = useState(true);
+    const initialFetchTriggered = useRef(false);
 
     const debouncedSearchTerm = useDebounce(searchTerm, 250);
     const TOTAL_CUSTOMERS = 1_000_000;
@@ -505,29 +578,46 @@ export default function App() {
     };
 
     useEffect(() => {
+        const fetchInitialData = async () => {
+            if (initialFetchTriggered.current) return;
+            initialFetchTriggered.current = true;
+    
+            try {
+                const db = await getDb();
+                const tx = db.transaction(STORE_NAME, "readonly");
+                const store = tx.objectStore(STORE_NAME);
+                const initialResults = [];
+                
+                const recordCount = await new Promise(res => {
+                    const req = store.count();
+                    req.onsuccess = e => res(e.target.result);
+                    req.onerror = () => res(0);
+                });
+    
+                store.openCursor().onsuccess = (e) => {
+                    const cursor = e.target.result;
+                    if (cursor && initialResults.length < PAGE_SIZE) {
+                        initialResults.push(cursor.value);
+                        cursor.continue();
+                    } else {
+                        setCustomers(initialResults);
+                        setHasMore(initialResults.length === PAGE_SIZE && recordCount > PAGE_SIZE);
+                        setIsInitialLoading(false); 
+                    }
+                };
+            } catch (error) {
+                console.error("Failed to fetch initial data:", error);
+                setIsInitialLoading(false);
+            }
+        };
+
         (async () => {
-            setIsInitialLoading(true);
             const db = await getDb();
             const recordCount = await new Promise(res => {
                 const req = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).count();
                 req.onsuccess = e => res(e.target.result);
                 req.onerror = () => res(0);
             });
-
-            const tx = db.transaction(STORE_NAME, "readonly");
-            const store = tx.objectStore(STORE_NAME);
-            const initialResults = [];
-            store.openCursor().onsuccess = (e) => {
-                const cursor = e.target.result;
-                if (cursor && initialResults.length < PAGE_SIZE) {
-                    initialResults.push(cursor.value);
-                    cursor.continue();
-                } else {
-                    setCustomers(initialResults);
-                    setHasMore(initialResults.length === PAGE_SIZE && recordCount > PAGE_SIZE);
-                    setIsInitialLoading(false); 
-                }
-            };
 
             if (recordCount < TOTAL_CUSTOMERS) {
                 setStatus({ loading: true, message: `Seeding ${recordCount.toLocaleString()}...` });
@@ -536,11 +626,22 @@ export default function App() {
                 `], { type: 'application/javascript' });
                 const worker = new Worker(URL.createObjectURL(workerBlob));
                 worker.postMessage({ start: recordCount, total: TOTAL_CUSTOMERS });
+                
                 worker.onmessage = (e) => {
-                    if (e.data.done) { setStatus({ loading: false, message: 'Database fully seeded ✅' }); worker.terminate(); } 
-                    else if (e.data.added) { setStatus({ loading: true, message: `${e.data.added.toLocaleString()} / ${TOTAL_CUSTOMERS.toLocaleString()} customers added...` }); }
+                    if (e.data.done) { 
+                        setStatus({ loading: false, message: 'Database fully seeded ✅' }); 
+                        worker.terminate(); 
+                    } else if (e.data.added) { 
+                        if (!initialFetchTriggered.current) {
+                            fetchInitialData();
+                        }
+                        setStatus({ loading: true, message: `${e.data.added.toLocaleString()} / ${TOTAL_CUSTOMERS.toLocaleString()} customers added...` }); 
+                    }
                 };
-            } else { setStatus({ loading: false, message: `Database fully loaded ✅` }); }
+            } else { 
+                setStatus({ loading: false, message: `Database fully loaded ✅` });
+                fetchInitialData();
+            }
         })();
     }, []);
 
@@ -587,10 +688,22 @@ export default function App() {
             <ComponentStyles />
             <div className="app-container">
                 <header className="app-header">
+                    <div className="header-left">
+                        <Logo />
+                    </div>
                     <div className="header-center">
                         <div className="search-bar">
                             <svg width="16" height="16" viewBox="0 0 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M11.7422 10.3438H11.0234L10.7656 10.0938C11.6484 9.04688 12.1641 7.69531 12.1641 6.25C12.1641 2.92969 9.48438 0.25 6.16406 0.25C2.84375 0.25 0.164062 2.92969 0.164062 6.25C0.164062 9.57031 2.84375 12.25 6.16406 12.25C7.60156 12.25 8.95312 11.7344 10.0078 10.8516L10.2578 11.1094V11.8281L14.9141 16.4844L16.3203 15.0781L11.7422 10.3438ZM6.16406 10.3438C3.8902 10.3438 2.07031 8.52344 2.07031 6.25C2.07031 3.97656 3.89062 2.15625 6.16406 2.15625C8.4375 2.15625 10.2578 3.97656 10.2578 6.25C10.2578 8.52344 8.4375 10.3438 6.16406 10.3438Z" fill="#6B7280" /></svg>
                             <input type="text" placeholder="Search by name, email, or phone" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                        </div>
+                    </div>
+                    <div className="header-right">
+                        <button className="filter-button">
+                            <FilterIcon />
+                            <span>Filters</span>
+                        </button>
+                        <div className="user-profile">
+                            <UserIcon />
                         </div>
                     </div>
                 </header>
@@ -610,3 +723,4 @@ export default function App() {
         </>
     );
 }
+
