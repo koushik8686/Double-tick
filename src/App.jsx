@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
+import React, { useState, useEffect, useRef, memo, useMemo, useCallback } from 'react';
 
 // --- STYLES ---
 // Since we can't link an external CSS file, all styles are included here.
@@ -184,8 +184,18 @@ const ComponentStyles = () => (
         .sort-icon {
             margin-left: 4px;
             font-size: 0.6rem;
-            display: inline-block;
+            display: inline-flex;
+            vertical-align: middle;
             width: 1ch;
+        }
+        
+        .sort-icon.unsorted {
+            opacity: 0.4;
+            transition: opacity 0.2s;
+        }
+        
+        th.sortable:hover .sort-icon.unsorted {
+            opacity: 1;
         }
         
         .scroll-container {
@@ -259,7 +269,7 @@ const ComponentStyles = () => (
 );
 
 // --- HELPER FUNCTIONS & CONSTANTS ---
-const DB_NAME = 'CustomerDatabase', STORE_NAME = 'customers', DB_VERSION = 1;
+const DB_NAME = 'CustomerDatabase', STORE_NAME = 'customers', DB_VERSION = 2;
 const ROW_HEIGHT = 55, OVERSCAN_COUNT = 5, PAGE_SIZE = 30;
 let dbPromise = null;
 
@@ -270,15 +280,31 @@ const getDb = () => {
             request.onerror = (e) => reject(new Error(`Database error: ${e.target.errorCode}`));
             request.onsuccess = (e) => resolve(e.target.result);
             request.onupgradeneeded = (e) => {
-                const store = e.target.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
-                store.createIndex('name', 'name', { unique: false });
-                store.createIndex('email', 'email', { unique: true });
-                store.createIndex('phone', 'phone', { unique: false });
+                const db = e.target.result;
+                const transaction = e.currentTarget.transaction;
+                let store;
+
+                if (!db.objectStoreNames.contains(STORE_NAME)) {
+                    store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                } else {
+                    store = transaction.objectStore(STORE_NAME);
+                }
+                
+                if (e.oldVersion < 1) {
+                    if (!store.indexNames.contains('name')) store.createIndex('name', 'name', { unique: false });
+                    if (!store.indexNames.contains('email')) store.createIndex('email', 'email', { unique: true });
+                    if (!store.indexNames.contains('phone')) store.createIndex('phone', 'phone', { unique: false });
+                }
+                if (e.oldVersion < 2) {
+                    if (!store.indexNames.contains('score')) store.createIndex('score', 'score', { unique: false });
+                    if (!store.indexNames.contains('lastMessageAt')) store.createIndex('lastMessageAt', 'lastMessageAt', { unique: false });
+                }
             };
         });
     }
     return dbPromise;
 };
+
 
 function useDebounce(value, delay) {
     const [debouncedValue, setDebouncedValue] = useState(value);
@@ -298,8 +324,7 @@ function useCustomerSearch(debouncedSearchTerm) {
     const [isNewSearchLoading, setIsNewSearchLoading] = useState(false);
     const lastScannedKey = useRef(null);
     const activeQuery = useRef("");
-    const cancelRef = useRef(null); // cancel token
-    const PAGE_SIZE = 30;
+    const cancelRef = useRef(null);
 
     const loadMoreInternal = async (isNewSearch = false, token) => {
         const term = activeQuery.current;
@@ -322,8 +347,7 @@ function useCustomerSearch(debouncedSearchTerm) {
             const range = lastScannedKey.current ? IDBKeyRange.lowerBound(lastScannedKey.current, true) : null;
             const request = store.openCursor(range);
             const newResults = [];
-            let scanned = 0;
-
+            
             request.onsuccess = (e) => {
                 if (cancelRef.current !== token) {
                     setIsLoadingMore(false);
@@ -332,7 +356,6 @@ function useCustomerSearch(debouncedSearchTerm) {
                 }
                 const cursor = e.target.result;
                 if (cursor) {
-                    scanned++;
                     const customer = cursor.value;
                     const match = customer.name.toLowerCase().includes(term) ||
                                   customer.email.toLowerCase().includes(term) ||
@@ -369,38 +392,25 @@ function useCustomerSearch(debouncedSearchTerm) {
         }
     };
 
-    // Called automatically on input change
     useEffect(() => {
         const term = debouncedSearchTerm.trim().toLowerCase();
         activeQuery.current = term;
-
         const token = Symbol();
         cancelRef.current = token;
-
         if (term) {
-            setFilteredCustomers([]);
-            setHasMore(true);
-            setIsNewSearchLoading(true);
-            loadMoreInternal(true, token); // initial search
+            loadMoreInternal(true, token);
         } else {
             setFilteredCustomers([]);
             setIsNewSearchLoading(false);
         }
     }, [debouncedSearchTerm]);
 
-    // Expose safe functions
     const loadNextPage = () => {
         const token = cancelRef.current;
         loadMoreInternal(false, token);
     };
 
-    return {
-        filteredCustomers,
-        hasMore,
-        isLoadingMore,
-        isNewSearchLoading,
-        loadNextPage, // <-- use this for scrolling
-    };
+    return { filteredCustomers, hasMore, isLoadingMore, isNewSearchLoading, loadNextPage };
 }
 
 
@@ -448,16 +458,24 @@ const Table = ({ customers, onSort, sortConfig, onLoadMore, hasMore, isLoadingMo
 
     const SortableHeader = ({ columnKey, title }) => {
         const isSorted = sortConfig.key === columnKey;
-        const directionIcon = sortConfig.direction === 'asc' ? '▲' : '▼';
         return (
             <th className="sortable" onClick={() => onSort(columnKey)}>
-                {title} {isSorted && <span className="sort-icon">{directionIcon}</span>}
+                {title}
+                {isSorted ? (
+                    <span className="sort-icon">
+                        {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                    </span>
+                ) : (
+                    <span className="sort-icon unsorted">
+                        <UnsortedIcon />
+                    </span>
+                )}
             </th>
         );
     };
 
     const renderRows = () => {
-        if (isInitialLoading) {
+        if (isInitialLoading && customers.length === 0) {
             return Array.from({ length: 10 }).map((_, i) => (
                 <SkeletonRow key={i} style={{ position: 'absolute', top: `${i * ROW_HEIGHT}px`, left: 0, width: '100%', height: `${ROW_HEIGHT}px` }} />
             ));
@@ -509,178 +527,257 @@ const Table = ({ customers, onSort, sortConfig, onLoadMore, hasMore, isLoadingMo
 };
 
 // --- ICONS ---
-const FilterIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M2.66699 4.66667H13.3337" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <path d="M4.66699 8H11.3337" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <path d="M6.66699 11.3333H9.33366" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-);
-
-const UserIcon = () => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 12C14.2091 12 16 10.2091 16 8C16 5.79086 14.2091 4 12 4C9.79086 4 8 5.79086 8 8C8 10.2091 9.79086 12 12 12Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M20 21V19C20 16.7909 18.2091 15 16 15H8C5.79086 15 4 16.7909 4 19V21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-);
-
-const Logo = () => (
-     <svg height="24" viewBox="0 0 120 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M14.02 2.00005L7.02 14.0001L14.02 26.0001H28.02L21.02 14.0001L28.02 2.00005H14.02Z" fill="#3B82F6"/>
-        <text x="35" y="20" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" fontSize="20" fontWeight="600" fill="#111827">DataGrid</text>
-    </svg>
-);
+const FilterIcon = () => ( <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"> <path d="M2.66699 4.66667H13.3337" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/> <path d="M4.66699 8H11.3337" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/> <path d="M6.66699 11.3333H9.33366" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/> </svg> );
+const UserIcon = () => ( <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"> <path d="M12 12C14.2091 12 16 10.2091 16 8C16 5.79086 14.2091 4 12 4C9.79086 4 8 5.79086 8 8C8 10.2091 9.79086 12 12 12Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/> <path d="M20 21V19C20 16.7909 18.2091 15 16 15H8C5.79086 15 4 16.7909 4 19V21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/> </svg> );
+const Logo = () => ( <svg height="24" viewBox="0 0 120 28" fill="none" xmlns="http://www.w3.org/2000/svg"> <path d="M14.02 2.00005L7.02 14.0001L14.02 26.0001H28.02L21.02 14.0001L28.02 2.00005H14.02Z" fill="#3B82F6"/> <text x="35" y="20" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" fontSize="20" fontWeight="600" fill="#111827">DataGrid</text> </svg> );
+const UnsortedIcon = () => ( <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg"> <path d="M8 3L11 6H5L8 3Z"/> <path d="M8 13L5 10H11L8 13Z"/> </svg> );
 
 
 // --- MAIN APP COMPONENT ---
 export default function App() {
     const [searchTerm, setSearchTerm] = useState("");
-    const [customers, setCustomers] = useState([]);
-    const [sortConfig, setSortConfig] = useState({ key: 'score', direction: 'desc' });
+    const [sortConfig, setSortConfig] = useState({ key: '', direction: '' });
     const [status, setStatus] = useState({ loading: true, message: 'Initializing...' });
     
+    // States for default order
+    const [customers, setCustomers] = useState([]);
     const [hasMore, setHasMore] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
-    const [isInitialLoading, setIsInitialLoading] = useState(true);
-    const initialFetchTriggered = useRef(false);
+    const [isInitialAppLoad, setIsInitialAppLoad] = useState(true);
+    const pageRef = useRef(0);
+    const isLoadingRef = useRef(false);
 
+    // States for sorted order
+    const [sortedCustomers, setSortedCustomers] = useState([]);
+    const [sortedHasMore, setSortedHasMore] = useState(true);
+    const [isSortedLoadingMore, setIsSortedLoadingMore] = useState(false);
+    const [isNewSortLoading, setIsNewSortLoading] = useState(false);
+    const sortedPageRef = useRef(0);
+    const isSortedLoadingRef = useRef(false);
+    
     const debouncedSearchTerm = useDebounce(searchTerm, 250);
     const TOTAL_CUSTOMERS = 1_000_000;
-
     const search = useCustomerSearch(debouncedSearchTerm);
+    const isSearching = debouncedSearchTerm.trim() !== '';
+    const isSorting = !isSearching && sortConfig.key !== '';
 
-    const loadMoreCustomers = async () => {
-        if (isLoadingMore || !hasMore) return;
-        setIsLoadingMore(true);
-        await new Promise(resolve => setTimeout(resolve, 500));
+    const fetchDefaultCustomers = useCallback(async (isNewQuery) => {
+        if (isLoadingRef.current) return;
+        console.log(`[DB] Fetching DEFAULT... New: ${isNewQuery}, Page: ${isNewQuery ? 0 : pageRef.current}`);
+        isLoadingRef.current = true;
+        
+        if (isNewQuery) {
+            pageRef.current = 0;
+            setHasMore(true);
+        } else {
+            if (!hasMore) {
+                isLoadingRef.current = false;
+                return;
+            }
+            setIsLoadingMore(true);
+        }
+
         try {
             const db = await getDb();
             const tx = db.transaction(STORE_NAME, "readonly");
             const store = tx.objectStore(STORE_NAME);
-            const lastId = customers.length > 0 ? customers[customers.length - 1].id : null;
-            const range = lastId ? IDBKeyRange.lowerBound(lastId, true) : null; 
-            const request = store.openCursor(range);
-            const newCustomers = [];
+            const request = store.openCursor(null, 'next');
+            let advanced = false;
+            const results = [];
 
-            request.onsuccess = (event) => {
-                const cursor = event.target.result;
-                if (cursor && newCustomers.length < PAGE_SIZE) {
-                    newCustomers.push(cursor.value);
+            request.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (!advanced && pageRef.current > 0) {
+                    advanced = true;
+                    if (cursor) cursor.advance(pageRef.current * PAGE_SIZE);
+                    else {
+                        setHasMore(false);
+                        setIsLoadingMore(false);
+                        isLoadingRef.current = false;
+                    }
+                    return;
+                }
+                if (cursor && results.length < PAGE_SIZE) {
+                    results.push(cursor.value);
                     cursor.continue();
                 } else {
-                    setCustomers(prev => [...prev, ...newCustomers]);
-                    if (!cursor || newCustomers.length < PAGE_SIZE) setHasMore(false);
+                    if (isNewQuery) setCustomers(results);
+                    else setCustomers(prev => [...prev, ...results]);
+                    setHasMore(!!cursor);
+                    pageRef.current += 1;
                     setIsLoadingMore(false);
+                    isLoadingRef.current = false;
+                    console.log(`[DB] Fetched ${results.length} DEFAULT customers. New pageRef: ${pageRef.current}. Has More: ${!!cursor}`);
                 }
             };
-            request.onerror = (e) => { setIsLoadingMore(false); console.error("Cursor error:", e.target.error); };
-        } catch (error) { setIsLoadingMore(false); console.error("Failed to load customers:", error); }
-    };
+            request.onerror = (e) => {
+                console.error("[DB] Default cursor error:", e.target.error);
+                setIsLoadingMore(false);
+                isLoadingRef.current = false;
+            };
+        } catch(error) {
+            console.error("[DB] Failed to fetch default customers:", error);
+            setIsLoadingMore(false);
+            isLoadingRef.current = false;
+        }
+    }, [hasMore]);
+
+    const fetchSortedCustomers = useCallback(async (isNewQuery) => {
+        if (!sortConfig.key) return;
+        if (isSortedLoadingRef.current) return;
+        console.log(`[DB] Fetching SORTED... New: ${isNewQuery}, Page: ${isNewQuery ? 0 : sortedPageRef.current}, Sort: ${sortConfig.key}-${sortConfig.direction}`);
+        isSortedLoadingRef.current = true;
+        
+        if (isNewQuery) {
+            sortedPageRef.current = 0;
+            setSortedHasMore(true);
+            setIsNewSortLoading(true);
+        } else {
+            if (!sortedHasMore) {
+                isSortedLoadingRef.current = false;
+                return;
+            }
+            setIsSortedLoadingMore(true);
+        }
+
+        try {
+            const db = await getDb();
+            const tx = db.transaction(STORE_NAME, "readonly");
+            const source = tx.objectStore(STORE_NAME).index(sortConfig.key);
+            const direction = sortConfig.direction === 'desc' ? 'prev' : 'next';
+            const request = source.openCursor(null, direction);
+            let advanced = false;
+            const results = [];
+
+            request.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (!advanced && sortedPageRef.current > 0) {
+                    advanced = true;
+                    if (cursor) cursor.advance(sortedPageRef.current * PAGE_SIZE);
+                    else {
+                        setSortedHasMore(false);
+                        setIsSortedLoadingMore(false);
+                        isSortedLoadingRef.current = false;
+                    }
+                    return;
+                }
+                if (cursor && results.length < PAGE_SIZE) {
+                    results.push(cursor.value);
+                    cursor.continue();
+                } else {
+                    if (isNewQuery) setSortedCustomers(results);
+                    else setSortedCustomers(prev => [...prev, ...results]);
+                    setSortedHasMore(!!cursor);
+                    sortedPageRef.current += 1;
+                    if (isNewQuery) setIsNewSortLoading(false);
+                    setIsSortedLoadingMore(false);
+                    isSortedLoadingRef.current = false;
+                    console.log(`[DB] Fetched ${results.length} SORTED customers. New pageRef: ${sortedPageRef.current}. Has More: ${!!cursor}`);
+                }
+            };
+            request.onerror = (e) => {
+                console.error("[DB] Sorted cursor error:", e.target.error);
+                if (isNewQuery) setIsNewSortLoading(false);
+                setIsSortedLoadingMore(false);
+                isSortedLoadingRef.current = false;
+            };
+        } catch(error) {
+            console.error("[DB] Failed to fetch sorted customers:", error);
+            if (isNewQuery) setIsNewSortLoading(false);
+            setIsSortedLoadingMore(false);
+            isSortedLoadingRef.current = false;
+        }
+    }, [sortConfig.key, sortConfig.direction, sortedHasMore]);
 
     useEffect(() => {
-        const fetchInitialData = async () => {
-            if (initialFetchTriggered.current) return;
-            initialFetchTriggered.current = true;
-    
-            try {
-                const db = await getDb();
-                const tx = db.transaction(STORE_NAME, "readonly");
-                const store = tx.objectStore(STORE_NAME);
-                const initialResults = [];
-                
-                const recordCount = await new Promise(res => {
-                    const req = store.count();
-                    req.onsuccess = e => res(e.target.result);
-                    req.onerror = () => res(0);
-                });
-    
-                store.openCursor().onsuccess = (e) => {
-                    const cursor = e.target.result;
-                    if (cursor && initialResults.length < PAGE_SIZE) {
-                        initialResults.push(cursor.value);
-                        cursor.continue();
-                    } else {
-                        setCustomers(initialResults);
-                        setHasMore(initialResults.length === PAGE_SIZE && recordCount > PAGE_SIZE);
-                        setIsInitialLoading(false); 
-                    }
-                };
-            } catch (error) {
-                console.error("Failed to fetch initial data:", error);
-                setIsInitialLoading(false);
-            }
-        };
-
         (async () => {
             const db = await getDb();
             const recordCount = await new Promise(res => {
                 const req = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).count();
-                req.onsuccess = e => res(e.target.result);
-                req.onerror = () => res(0);
+                req.onsuccess = e => res(e.target.result); req.onerror = () => res(0);
             });
 
             if (recordCount < TOTAL_CUSTOMERS) {
                 setStatus({ loading: true, message: `Seeding ${recordCount.toLocaleString()}...` });
-                const workerBlob = new Blob([`
-                    self.onmessage=async e=>{const{start:r,total:s}=e.data,t="CustomerDatabase",o="customers";function a(r,e=0){const s=["Aarav","Meera","Kiran","Ravi","Priya","Rahul"],t=["Patel","Sharma","Reddy","Iyer","Kumar","Singh"];let o=[];for(let a=0;a<r;a++){const n=e+a+1,c=s[Math.floor(Math.random()*s.length)],i=t[Math.floor(Math.random()*t.length)];o.push({id:n,name:c+" "+i,phone:"+91"+Math.floor(6e9+4e9*Math.random()),email:c.toLowerCase()+"."+i.toLowerCase()+n+"@example.com",score:Math.floor(100*Math.random()),lastMessageAt:new Date(Date.now()-1e3*3600*24*30*Math.random()),addedBy:"System",avatar:"https://api.dicebear.com/7.x/initials/svg?seed="+c+"+"+i})}return o}const n=indexedDB.open(t,1);n.onsuccess=async n=>{const c=n.target.result;for(let n=r;n<s;n+=5e3){const r=a(Math.min(5e3,s-n),n),i=c.transaction(o,"readwrite"),l=i.objectStore(o);r.forEach(r=>l.add(r)),await i.done,self.postMessage({added:n+r.length}),await new Promise(r=>setTimeout(r,0))}self.postMessage({done:!0})}};
-                `], { type: 'application/javascript' });
+                const workerBlob = new Blob([`self.onmessage=async e=>{const{start:r,total:s}=e.data,t="CustomerDatabase",o="customers";function a(r,e=0){const s=["Aarav","Meera","Kiran","Ravi","Priya","Rahul"],t=["Patel","Sharma","Reddy","Iyer","Kumar","Singh"];let o=[];for(let a=0;a<r;a++){const n=e+a+1,c=s[Math.floor(Math.random()*s.length)],i=t[Math.floor(Math.random()*t.length)];o.push({id:n,name:c+" "+i,phone:"+91"+Math.floor(6e9+4e9*Math.random()),email:c.toLowerCase()+"."+i.toLowerCase()+n+"@example.com",score:Math.floor(100*Math.random()),lastMessageAt:new Date(Date.now()-1e3*3600*24*30*Math.random()),addedBy:"System",avatar:"https://api.dicebear.com/7.x/initials/svg?seed="+c+"+"+i})}return o}const n=indexedDB.open(t,2);n.onsuccess=async n=>{const c=n.target.result;for(let n=r;n<s;n+=5e3){const r=a(Math.min(5e3,s-n),n),i=c.transaction(o,"readwrite"),l=i.objectStore(o);r.forEach(r=>l.add(r)),await new Promise(r=>i.oncomplete=r),self.postMessage({added:n+r.length}),await new Promise(r=>setTimeout(r,0))}self.postMessage({done:!0})}};`], { type: 'application/javascript' });
                 const worker = new Worker(URL.createObjectURL(workerBlob));
                 worker.postMessage({ start: recordCount, total: TOTAL_CUSTOMERS });
-                
                 worker.onmessage = (e) => {
-                    if (e.data.done) { 
-                        setStatus({ loading: false, message: 'Database fully seeded ✅' }); 
-                        worker.terminate(); 
-                    } else if (e.data.added) { 
-                        if (!initialFetchTriggered.current) {
-                            fetchInitialData();
-                        }
-                        setStatus({ loading: true, message: `${e.data.added.toLocaleString()} / ${TOTAL_CUSTOMERS.toLocaleString()} customers added...` }); 
-                    }
+                    if (e.data.done) { setStatus({ loading: false, message: 'Database fully seeded ✅' }); worker.terminate(); }
+                    else if (e.data.added) { setStatus({ loading: true, message: `${e.data.added.toLocaleString()} / ${TOTAL_CUSTOMERS.toLocaleString()} customers added...` }); }
                 };
-            } else { 
-                setStatus({ loading: false, message: `Database fully loaded ✅` });
-                fetchInitialData();
-            }
+            } else { setStatus({ loading: false, message: `Database fully loaded ✅` }); }
         })();
     }, []);
 
-    const handleSort = (key) => { setSortConfig(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' })); };
-    
-    const isSearching = debouncedSearchTerm.trim() !== '';
+    useEffect(() => {
+        fetchDefaultCustomers(true).finally(() => setIsInitialAppLoad(false));
+    }, []);
 
-    const sortedData = useMemo(() => {
-        const dataToSort = isSearching ? search.filteredCustomers : customers;
-        if (!sortConfig.key) {
-            return dataToSort;
+    useEffect(() => {
+        if (!isSearching && sortConfig.key) {
+            fetchSortedCustomers(true);
         }
+    }, [sortConfig, isSearching, fetchSortedCustomers]);
 
-        const sorted = [...dataToSort].sort((a, b) => {
-            const valA = a[sortConfig.key];
-            const valB = b[sortConfig.key];
-
-            if (valA === null || valA === undefined) return 1;
-            if (valB === null || valB === undefined) return -1;
-            
-            let comparison = 0;
-            if (sortConfig.key === 'lastMessageAt') {
-                comparison = new Date(valA).getTime() - new Date(valB).getTime();
-            } else if (typeof valA === 'string') {
-                comparison = valA.localeCompare(valB);
-            } else {
-                comparison = valA - valB;
-            }
-
-            return sortConfig.direction === 'asc' ? comparison : -comparison;
+    const handleSort = (key) => {
+        setSortConfig(current => {
+            if (current.key !== key) return { key, direction: 'asc' };
+            if (current.direction === 'asc') return { key, direction: 'desc' };
+            return { key: '', direction: '' };
         });
-        return sorted;
-    }, [customers, search.filteredCustomers, sortConfig, isSearching]);
+    };
+    
+    const displayedData = useMemo(() => {
+        if (isSearching) {
+            const dataToSort = search.filteredCustomers;
+            if (!sortConfig.key) return dataToSort;
+            // In-memory sort for search results
+            return [...dataToSort].sort((a, b) => {
+                const valA = a[sortConfig.key], valB = b[sortConfig.key];
+                if (valA === null || valA === undefined) return 1; if (valB === null || valB === undefined) return -1;
+                let comparison = 0;
+                if (sortConfig.key === 'lastMessageAt') comparison = new Date(valA).getTime() - new Date(valB).getTime();
+                else if (typeof valA === 'string') comparison = valA.localeCompare(valB);
+                else comparison = valA - valB;
+                return sortConfig.direction === 'asc' ? comparison : -comparison;
+            });
+        }
+        return isSorting ? sortedCustomers : customers;
+    }, [customers, sortedCustomers, search.filteredCustomers, sortConfig, isSearching, isSorting]);
 
     const getStatusMessage = () => {
         if (search.isNewSearchLoading) return `Searching for "${debouncedSearchTerm}"...`;
         if (status.loading) return status.message;
-        if (isSearching) return `Displaying ${search.filteredCustomers.length.toLocaleString()}${search.hasMore ? '+' : ''} results for "${debouncedSearchTerm}"`;
-        return `Displaying ${customers.length.toLocaleString()} of ~${TOTAL_CUSTOMERS.toLocaleString()} customers`;
+
+        if (isSearching) {
+            return `Displaying ${search.filteredCustomers.length.toLocaleString()}${search.hasMore ? '+' : ''} results for "${debouncedSearchTerm}"`;
+        }
+        
+        const total = isSorting ? sortedCustomers.length : customers.length;
+        const currentHasMore = isSorting ? sortedHasMore : hasMore;
+        const baseMessage = `Displaying ${total.toLocaleString()}${currentHasMore ? '+' : ''} of ~${TOTAL_CUSTOMERS.toLocaleString()} customers`;
+
+        if (isSorting) {
+            const sortKeyName = {
+                name: 'Customer Name',
+                email: 'Email',
+                phone: 'Phone',
+                score: 'Score',
+                lastMessageAt: 'Last Message'
+            }[sortConfig.key] || sortConfig.key;
+            const sortDirection = sortConfig.direction === 'asc' ? 'ascending' : 'descending';
+            return `${baseMessage}, sorted by ${sortKeyName} (${sortDirection})`;
+        }
+
+        return baseMessage;
+    };
+
+
+    const onLoadMore = () => {
+        if (isSearching) search.loadNextPage();
+        else if (isSorting) fetchSortedCustomers(false);
+        else fetchDefaultCustomers(false);
     };
 
     return (
@@ -688,9 +785,7 @@ export default function App() {
             <ComponentStyles />
             <div className="app-container">
                 <header className="app-header">
-                    <div className="header-left">
-                        <Logo />
-                    </div>
+                    <div className="header-left"> <Logo /> </div>
                     <div className="header-center">
                         <div className="search-bar">
                             <svg width="16" height="16" viewBox="0 0 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M11.7422 10.3438H11.0234L10.7656 10.0938C11.6484 9.04688 12.1641 7.69531 12.1641 6.25C12.1641 2.92969 9.48438 0.25 6.16406 0.25C2.84375 0.25 0.164062 2.92969 0.164062 6.25C0.164062 9.57031 2.84375 12.25 6.16406 12.25C7.60156 12.25 8.95312 11.7344 10.0078 10.8516L10.2578 11.1094V11.8281L14.9141 16.4844L16.3203 15.0781L11.7422 10.3438ZM6.16406 10.3438C3.8902 10.3438 2.07031 8.52344 2.07031 6.25C2.07031 3.97656 3.89062 2.15625 6.16406 2.15625C8.4375 2.15625 10.2578 3.97656 10.2578 6.25C10.2578 8.52344 8.4375 10.3438 6.16406 10.3438Z" fill="#6B7280" /></svg>
@@ -698,25 +793,20 @@ export default function App() {
                         </div>
                     </div>
                     <div className="header-right">
-                        <button className="filter-button">
-                            <FilterIcon />
-                            <span>Filters</span>
-                        </button>
-                        <div className="user-profile">
-                            <UserIcon />
-                        </div>
+                        <button className="filter-button"> <FilterIcon /> <span>Filters</span> </button>
+                        <div className="user-profile"> <UserIcon /> </div>
                     </div>
                 </header>
                 <main className="content-area">
                     <div className="status-bar">{getStatusMessage()}</div>
                     <Table
-                      customers={sortedData}
+                      customers={displayedData}
                       onSort={handleSort}
                       sortConfig={sortConfig}
-                      onLoadMore={isSearching ? search.loadNextPage : loadMoreCustomers}
-                      hasMore={isSearching ? search.hasMore : hasMore}
-                      isLoadingMore={isSearching ? search.isLoadingMore : isLoadingMore}
-                      isInitialLoading={isInitialLoading || search.isNewSearchLoading}
+                      onLoadMore={onLoadMore}
+                      hasMore={isSearching ? search.hasMore : (isSorting ? sortedHasMore : hasMore)}
+                      isLoadingMore={isSearching ? search.isLoadingMore : (isSorting ? isSortedLoadingMore : isLoadingMore)}
+                      isInitialLoading={isInitialAppLoad || search.isNewSearchLoading || isNewSortLoading}
                   />  
                 </main>
             </div>
