@@ -3,20 +3,24 @@ import React, { useState, useEffect, useRef, memo, useMemo, useCallback } from '
 // --- STYLES ---
 // Since we can't link an external CSS file, all styles are included here.
 const ComponentStyles = () => (
-    <style>{`
+   <style>{`
         :root {
-            --primary-bg: #f9fafb;
+            --primary-bg: #f8f9fa;
             --secondary-bg: #ffffff;
-            --border-color: #e5e7eb;
-            --text-primary: #111827;
-            --text-secondary: #6b7280;
-            --accent-color: #3b82f6;
+            --border-color: #dee2e6;
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+            --accent-color: #0d6efd;
             --header-height: 64px;
+            --hover-bg: #f1f3f5;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            --radius: 8px;
         }
 
         body {
             margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background-color: var(--primary-bg);
             color: var(--text-primary);
             -webkit-font-smoothing: antialiased;
@@ -39,12 +43,13 @@ const ComponentStyles = () => (
             background-color: var(--secondary-bg);
             border-bottom: 1px solid var(--border-color);
             flex-shrink: 0;
+            box-shadow: var(--shadow-sm);
         }
 
         .header-left, .header-right {
             display: flex;
             align-items: center;
-            gap: 20px;
+            gap: 16px;
             flex-shrink: 0;
         }
         
@@ -58,12 +63,12 @@ const ComponentStyles = () => (
         .search-bar {
             position: relative;
             width: 100%;
-            max-width: 480px;
+            max-width: 520px;
         }
 
         .search-bar svg {
             position: absolute;
-            left: 12px;
+            left: 14px;
             top: 50%;
             transform: translateY(-50%);
             color: var(--text-secondary);
@@ -71,25 +76,26 @@ const ComponentStyles = () => (
 
         .search-bar input {
             width: 100%;
-            padding: 8px 12px 8px 36px;
-            border-radius: 8px;
+            padding: 9px 12px 9px 40px;
+            border-radius: var(--radius);
             border: 1px solid var(--border-color);
             background-color: var(--primary-bg);
             transition: border-color 0.2s, box-shadow 0.2s;
+            font-size: 1rem;
         }
         
         .search-bar input:focus {
             outline: none;
             border-color: var(--accent-color);
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.2);
         }
 
         .filter-button {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 8px 12px;
-            border-radius: 8px;
+            padding: 8px 16px;
+            border-radius: var(--radius);
             border: 1px solid var(--border-color);
             background-color: var(--secondary-bg);
             font-size: 0.875rem;
@@ -100,29 +106,22 @@ const ComponentStyles = () => (
         }
 
         .filter-button:hover {
-            background-color: var(--primary-bg);
-        }
-
-        .filter-button svg {
-            color: var(--text-secondary);
+            background-color: var(--hover-bg);
         }
 
         .user-profile {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 36px;
-            height: 36px;
+            width: 40px;
+            height: 40px;
             border-radius: 50%;
             background-color: var(--primary-bg);
             cursor: pointer;
             border: 1px solid var(--border-color);
+            display: grid;
+            place-items: center;
         }
-
-        .user-profile svg {
-            width: 20px;
-            height: 20px;
-            color: var(--text-secondary);
+        
+        .user-profile:hover {
+             background-color: var(--hover-bg);
         }
 
         .content-area {
@@ -130,11 +129,11 @@ const ComponentStyles = () => (
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            padding: 16px 24px;
+            padding: 24px 32px;
         }
         
         .status-bar {
-            padding-bottom: 12px;
+            padding-bottom: 16px;
             font-size: 0.875rem;
             color: var(--text-secondary);
             flex-shrink: 0;
@@ -146,22 +145,15 @@ const ComponentStyles = () => (
             display: flex;
             flex-direction: column;
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: var(--radius);
             background-color: var(--secondary-bg);
+            box-shadow: var(--shadow-sm);
         }
 
-        .customer-table-header, .customer-table-body {
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: fixed;
-        }
+        .customer-table-header { flex-shrink: 0; }
         
-        .customer-table-header {
-            flex-shrink: 0;
-        }
-
         th {
-            padding: 12px 16px;
+            padding: 12px 24px;
             text-align: left;
             font-weight: 600;
             font-size: 0.75rem;
@@ -169,102 +161,64 @@ const ComponentStyles = () => (
             letter-spacing: 0.05em;
             color: var(--text-secondary);
             border-bottom: 1px solid var(--border-color);
-            background-color: #f9fafb;
-        }
-        
-        th.sortable {
-            cursor: pointer;
-            user-select: none;
-        }
-        
-        th.sortable:hover {
-             background-color: #f3f4f6;
-        }
-
-        .sort-icon {
-            margin-left: 4px;
-            font-size: 0.6rem;
-            display: inline-flex;
-            vertical-align: middle;
-            width: 1ch;
-        }
-        
-        .sort-icon.unsorted {
-            opacity: 0.4;
-            transition: opacity 0.2s;
-        }
-        
-        th.sortable:hover .sort-icon.unsorted {
-            opacity: 1;
-        }
-        
-        .scroll-container {
-            flex-grow: 1;
-            overflow-y: auto;
-            position: relative;
-        }
-
-        .table-row, .skeleton-row {
-            width: 100%;
-            background-color: var(--secondary-bg);
-        }
-        
-        .table-row:hover {
             background-color: var(--primary-bg);
         }
+        
+        th.sortable { cursor: pointer; user-select: none; }
+        th.sortable:hover { background-color: var(--hover-bg); }
+
+        .sort-icon { margin-left: 4px; font-size: 0.6rem; display: inline-flex; vertical-align: middle; width: 1ch; }
+        .sort-icon.unsorted { opacity: 0.4; transition: opacity 0.2s; }
+        th.sortable:hover .sort-icon.unsorted { opacity: 1; }
+        
+        .scroll-container { flex-grow: 1; overflow-y: auto; position: relative; }
+
+        .table-row { transition: background-color 0.15s ease-in-out; }
+        .table-row:hover { background-color: var(--hover-bg); }
 
         td {
-            padding: 8px 16px;
+            padding: 12px 24px;
             border-bottom: 1px solid var(--border-color);
             vertical-align: middle;
-        }
-
-        .cell-content {
-            display: flex;
-            align-items: center;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            font-size: 0.875rem;
-        }
-
-        .avatar-img {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            margin-right: 12px;
-            object-fit: cover;
-            flex-shrink: 0;
+            font-size: 0.9rem;
         }
         
-        .score-cell {
-            font-weight: 500;
-        }
-        
-        .skeleton-cell {
-            background-color: #e5e7eb;
-            border-radius: 4px;
-            animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-        
-        .skeleton-cell.avatar {
-             width: 32px;
-             height: 32px;
-             border-radius: 50%;
-             margin-right: 12px;
-        }
+        .table-row:last-child td { border-bottom: none; }
 
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
+        .cell-content { display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .avatar-img { width: 36px; height: 36px; border-radius: 50%; margin-right: 16px; object-fit: cover; flex-shrink: 0; }
+        .score-cell { font-weight: 600; }
+        
+        .skeleton-cell { background-color: #e9ecef; border-radius: 4px; animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        .skeleton-cell.avatar { width: 36px; height: 36px; border-radius: 50%; margin-right: 16px; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
-        .loading-indicator {
+        /* Filter Dropdown Styles */
+        .filter-dropdown-container {
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            width: 320px;
+            background: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+            z-index: 10;
             padding: 16px;
-            text-align: center;
-            color: var(--text-secondary);
-            font-size: 0.875rem;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
         }
+        .filter-section { display: flex; flex-direction: column; gap: 8px; }
+        .filter-section h4 { font-size: 0.875rem; margin: 0; color: var(--text-primary); }
+        .filter-input, .filter-date-input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 0.9rem; }
+        .score-range { display: flex; gap: 8px; }
+        .filter-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
+        .filter-action-btn { flex-grow: 1; padding: 8px 12px; border-radius: 6px; border: none; font-weight: 500; cursor: pointer; transition: background-color 0.2s; }
+        .apply-btn { background-color: var(--accent-color); color: white; }
+        .apply-btn:hover { background-color: #0b5ed7; }
+        .clear-btn { background-color: var(--hover-bg); border: 1px solid var(--border-color); }
+        .clear-btn:hover { background-color: #e2e6ea; }
     `}</style>
 );
 
@@ -413,6 +367,43 @@ function useCustomerSearch(debouncedSearchTerm) {
     return { filteredCustomers, hasMore, isLoadingMore, isNewSearchLoading, loadNextPage };
 }
 
+const FilterDropdown = ({ onApply, onClear, initialFilters, close }) => {
+    const [filters, setFilters] = useState(initialFilters);
+    const dropdownRef = useRef(null);
+
+    const handleChange = (e) => { const { name, value } = e.target; const [section, key] = name.split('.'); if (key) setFilters(prev => ({ ...prev, [section]: { ...prev[section], [key]: value } })); else setFilters(prev => ({ ...prev, [name]: value })); };
+    const handleApply = () => { onApply(filters); close(); };
+    const handleClear = () => { const cleared = { score: { min: '', max: '' }, addedBy: '', date: { after: '', before: '' } }; setFilters(cleared); onClear(); close(); };
+
+    useEffect(() => { const handleClickOutside = (event) => { if (dropdownRef.current && !dropdownRef.current.contains(event.target)) close(); }; document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside); }, [close]);
+
+    return (
+        <div className="filter-dropdown-container" ref={dropdownRef}>
+            <div className="filter-section">
+                <h4>Score</h4>
+                <div className="score-range">
+                    <input type="number" name="score.min" placeholder="Min" value={filters.score.min} onChange={handleChange} className="filter-input" />
+                    <input type="number" name="score.max" placeholder="Max" value={filters.score.max} onChange={handleChange} className="filter-input" />
+                </div>
+            </div>
+            <div className="filter-section">
+                <h4>Added By</h4>
+                <input type="text" name="addedBy" placeholder="e.g., System" value={filters.addedBy} onChange={handleChange} className="filter-input" />
+            </div>
+            <div className="filter-section">
+                <h4>Date Added</h4>
+                <div className="score-range">
+                     <input type="date" name="date.after" value={filters.date.after} onChange={handleChange} className="filter-date-input" title="After"/>
+                     <input type="date" name="date.before" value={filters.date.before} onChange={handleChange} className="filter-date-input" title="Before"/>
+                </div>
+            </div>
+            <div className="filter-actions">
+                <button onClick={handleClear} className="filter-action-btn clear-btn">Clear</button>
+                <button onClick={handleApply} className="filter-action-btn apply-btn">Apply</button>
+            </div>
+        </div>
+    );
+};
 
 // --- UI COMPONENTS ---
 const TableRow = memo(({ customer, style, serialNumber }) => (
@@ -546,7 +537,8 @@ export default function App() {
     const [isInitialAppLoad, setIsInitialAppLoad] = useState(true);
     const pageRef = useRef(0);
     const isLoadingRef = useRef(false);
-
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [activeFilters, setActiveFilters] = useState({ score: { min: '', max: '' }, addedBy: '', date: { after: '', before: '' } });
     // States for sorted order
     const [sortedCustomers, setSortedCustomers] = useState([]);
     const [sortedHasMore, setSortedHasMore] = useState(true);
@@ -728,14 +720,85 @@ export default function App() {
         });
     };
     
+    const handleApplyFilters = (filters) => {
+        console.log("Applying filters:", filters);
+        setActiveFilters(filters);
+        setIsFilterOpen(false);
+    };
+
+    const handleClearFilters = () => {
+        console.log("Clearing filters");
+        const cleared = { score: { min: '', max: '' }, addedBy: '', date: { after: '', before: '' } };
+        setActiveFilters(cleared);
+        setIsFilterOpen(false);
+    };
+
+    // Helper function to check if any filters are active
+    const hasActiveFilters = useCallback(() => {
+        return activeFilters.score.min !== '' || 
+               activeFilters.score.max !== '' || 
+               activeFilters.addedBy !== '' || 
+               activeFilters.date.after !== '' || 
+               activeFilters.date.before !== '';
+    }, [activeFilters]);
+
+    // Helper function to apply filters to data
+    const applyFilters = useCallback((data) => {
+        if (!hasActiveFilters()) return data;
+        
+        return data.filter(customer => {
+            // Score filter
+            if (activeFilters.score.min !== '' && customer.score < parseInt(activeFilters.score.min)) {
+                return false;
+            }
+            if (activeFilters.score.max !== '' && customer.score > parseInt(activeFilters.score.max)) {
+                return false;
+            }
+            
+            // Added by filter
+            if (activeFilters.addedBy !== '' && 
+                !customer.addedBy.toLowerCase().includes(activeFilters.addedBy.toLowerCase())) {
+                return false;
+            }
+            
+            // Date filters
+            if (activeFilters.date.after !== '') {
+                const afterDate = new Date(activeFilters.date.after);
+                const customerDate = new Date(customer.lastMessageAt);
+                if (customerDate < afterDate) {
+                    return false;
+                }
+            }
+            if (activeFilters.date.before !== '') {
+                const beforeDate = new Date(activeFilters.date.before);
+                const customerDate = new Date(customer.lastMessageAt);
+                if (customerDate > beforeDate) {
+                    return false;
+                }
+            }
+            
+            return true;
+        });
+    }, [activeFilters, hasActiveFilters]);
+    
     const displayedData = useMemo(() => {
+        let baseData;
+        
         if (isSearching) {
-            const dataToSort = search.filteredCustomers;
-            if (!sortConfig.key) return dataToSort;
-            // In-memory sort for search results
-            return [...dataToSort].sort((a, b) => {
+            baseData = search.filteredCustomers;
+        } else {
+            baseData = isSorting ? sortedCustomers : customers;
+        }
+        
+        // Apply filters to the base data
+        const filteredData = applyFilters(baseData);
+        
+        // Apply sorting for search results (other data is already sorted from DB)
+        if (isSearching && sortConfig.key) {
+            return [...filteredData].sort((a, b) => {
                 const valA = a[sortConfig.key], valB = b[sortConfig.key];
-                if (valA === null || valA === undefined) return 1; if (valB === null || valB === undefined) return -1;
+                if (valA === null || valA === undefined) return 1; 
+                if (valB === null || valB === undefined) return -1;
                 let comparison = 0;
                 if (sortConfig.key === 'lastMessageAt') comparison = new Date(valA).getTime() - new Date(valB).getTime();
                 else if (typeof valA === 'string') comparison = valA.localeCompare(valB);
@@ -743,20 +806,30 @@ export default function App() {
                 return sortConfig.direction === 'asc' ? comparison : -comparison;
             });
         }
-        return isSorting ? sortedCustomers : customers;
-    }, [customers, sortedCustomers, search.filteredCustomers, sortConfig, isSearching, isSorting]);
+        
+        return filteredData;
+    }, [customers, sortedCustomers, search.filteredCustomers, sortConfig, isSearching, isSorting, applyFilters]);
 
     const getStatusMessage = () => {
         if (search.isNewSearchLoading) return `Searching for "${debouncedSearchTerm}"...`;
         if (status.loading) return status.message;
 
         if (isSearching) {
-            return `Displaying ${search.filteredCustomers.length.toLocaleString()}${search.hasMore ? '+' : ''} results for "${debouncedSearchTerm}"`;
+            const searchResults = applyFilters(search.filteredCustomers);
+            const searchMessage = `Displaying ${searchResults.length.toLocaleString()}${search.hasMore ? '+' : ''} results for "${debouncedSearchTerm}"`;
+            return hasActiveFilters() ? `${searchMessage} (filtered)` : searchMessage;
         }
         
-        const total = isSorting ? sortedCustomers.length : customers.length;
+        const baseData = isSorting ? sortedCustomers : customers;
+        const filteredData = applyFilters(baseData);
         const currentHasMore = isSorting ? sortedHasMore : hasMore;
-        const baseMessage = `Displaying ${total.toLocaleString()}${currentHasMore ? '+' : ''} of ~${TOTAL_CUSTOMERS.toLocaleString()} customers`;
+        
+        let baseMessage;
+        if (hasActiveFilters()) {
+            baseMessage = `Displaying ${filteredData.length.toLocaleString()} filtered results from ${baseData.length.toLocaleString()}${currentHasMore ? '+' : ''} of ~${TOTAL_CUSTOMERS.toLocaleString()} customers`;
+        } else {
+            baseMessage = `Displaying ${baseData.length.toLocaleString()}${currentHasMore ? '+' : ''} of ~${TOTAL_CUSTOMERS.toLocaleString()} customers`;
+        }
 
         if (isSorting) {
             const sortKeyName = {
@@ -788,12 +861,18 @@ export default function App() {
                     <div className="header-left"> <Logo /> </div>
                     <div className="header-center">
                         <div className="search-bar">
-                            <svg width="16" height="16" viewBox="0 0 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M11.7422 10.3438H11.0234L10.7656 10.0938C11.6484 9.04688 12.1641 7.69531 12.1641 6.25C12.1641 2.92969 9.48438 0.25 6.16406 0.25C2.84375 0.25 0.164062 2.92969 0.164062 6.25C0.164062 9.57031 2.84375 12.25 6.16406 12.25C7.60156 12.25 8.95312 11.7344 10.0078 10.8516L10.2578 11.1094V11.8281L14.9141 16.4844L16.3203 15.0781L11.7422 10.3438ZM6.16406 10.3438C3.8902 10.3438 2.07031 8.52344 2.07031 6.25C2.07031 3.97656 3.89062 2.15625 6.16406 2.15625C8.4375 2.15625 10.2578 3.97656 10.2578 6.25C10.2578 8.52344 8.4375 10.3438 6.16406 10.3438Z" fill="#6B7280" /></svg>
-                            <input type="text" placeholder="Search by name, email, or phone" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.5 17.5L13.875 13.875M15.8333 9.16667C15.8333 12.8486 12.8486 15.8333 9.16667 15.8333C5.48477 15.8333 2.5 12.8486 2.5 9.16667C2.5 5.48477 5.48477 2.5 9.16667 2.5C12.8486 2.5 15.8333 5.48477 15.8333 9.16667Z" stroke="currentColor" strokeWidth="1.66667" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            <input type="text" placeholder="Search customers..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                         </div>
                     </div>
                     <div className="header-right">
-                        <button className="filter-button"> <FilterIcon /> <span>Filters</span> </button>
+                        <div style={{position: 'relative'}}>
+                           <button className="filter-button" onClick={() => setIsFilterOpen(o => !o)} style={{ backgroundColor: hasActiveFilters() ? 'var(--accent-color)' : undefined, color: hasActiveFilters() ? 'white' : undefined }}> 
+                               <FilterIcon /> 
+                               <span>Filters{hasActiveFilters() ? ' (Active)' : ''}</span> 
+                           </button>
+                           {isFilterOpen && <FilterDropdown onApply={handleApplyFilters} onClear={handleClearFilters} initialFilters={activeFilters} close={() => setIsFilterOpen(false)} />}
+                        </div>
                         <div className="user-profile"> <UserIcon /> </div>
                     </div>
                 </header>
@@ -806,11 +885,11 @@ export default function App() {
                       onLoadMore={onLoadMore}
                       hasMore={isSearching ? search.hasMore : (isSorting ? sortedHasMore : hasMore)}
                       isLoadingMore={isSearching ? search.isLoadingMore : (isSorting ? isSortedLoadingMore : isLoadingMore)}
-                      isInitialLoading={isInitialAppLoad || search.isNewSearchLoading || isNewSortLoading}
+                      isInitialLoading={isInitialAppLoad || (isSearching && search.isNewSearchLoading) || (isSorting && isNewSortLoading)}
                   />  
                 </main>
             </div>
         </>
     );
-}
+}   
 
