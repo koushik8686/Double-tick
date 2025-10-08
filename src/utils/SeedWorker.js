@@ -26,20 +26,22 @@ function generateCustomers(count, offset = 0) {
 
 onmessage = async (e) => {
   const { start, total } = e.data;
-  const BATCH_SIZE = 5000;
+  // Increased batch size for faster processing
+  const BATCH_SIZE = 50000;
 
   const db = await idb.openDB("customerDB", 1);
-for (let i = start; i < total; i += BATCH_SIZE) {
-  const batch = generateCustomers(Math.min(BATCH_SIZE, total - i), i);
-  const tx = db.transaction("customers", "readwrite");
-  const store = tx.objectStore("customers");
-  batch.forEach((c) => store.add(c));
-  await tx.done;
-  console.log(`Inserted ${i + batch.length} / ${total} customers`);
-  // Post progress per batch
-  postMessage({ added: i + batch.length });
-}
+  for (let i = start; i < total; i += BATCH_SIZE) {
+    const batch = generateCustomers(Math.min(BATCH_SIZE, total - i), i);
+    const tx = db.transaction("customers", "readwrite");
+    const store = tx.objectStore("customers");
+    // Add each customer in the batch to the store
+    batch.forEach((c) => store.add(c));
+    await tx.done;
+    console.log(`Inserted ${i + batch.length} / ${total} customers`);
+    // Post progress per batch
+    postMessage({ added: i + batch.length });
+  }
 
-postMessage({ done: true });
-
+  // Signal that the process is complete
+  postMessage({ done: true });
 };
